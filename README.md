@@ -1,7 +1,7 @@
 ![](https://paralink.network/images/logo-sm-home.png)
 
 ### Ink! Smart Contracts
-This repository contains smart contracts for a Substrate runtime.
+This repository contains smart contracts for wasm runtime.
 
 Configure the compiler:
 ```

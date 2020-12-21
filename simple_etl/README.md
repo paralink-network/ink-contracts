@@ -1,5 +1,5 @@
-## ERC-20 Like Token
-The ERC-20 Ink template for the fee token.
+## Simple ETL
+This contract provides a no-fee endpoint for reqeusting ETL's.
 
 ### Test
 ```
