@@ -1,5 +1,5 @@
-## Simple RNG Oracle
-Request random integers in range(min, max).
+## ERC-20 Like Token
+The ERC-20 Ink template for the fee token.
 
 ### Test
 ```

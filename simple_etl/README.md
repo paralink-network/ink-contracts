@@ -1,5 +1,5 @@
-## Simple RNG Oracle
-Request random integers in range(min, max).
+## Simple ETL
+This contract provides a no-fee endpoint for reqeusting ETL's.
 
 ### Test
 ```
