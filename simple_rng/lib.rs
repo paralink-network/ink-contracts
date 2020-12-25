@@ -67,7 +67,8 @@ mod simple_rng {
         #[ink(message)]
         pub fn make_request(&mut self, min: u32, max: u32) -> Result<u64,Error> {
             let caller = self.env().caller();
-            self.request_id += 1;
+            // loop around to 0 after u64::max_value() is reached
+            self.request_id = self.request_id.wrapping_add(1);
             self.requests.insert(self.request_id, (min, max));
             self.env().emit_event(Request { from: caller, request_id: self.request_id});
             Ok(self.request_id)
