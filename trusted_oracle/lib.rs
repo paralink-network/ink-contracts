@@ -73,7 +73,7 @@ mod trusted_etl {
     #[ink(storage)]
     pub struct TrustedOracle {
         /// Admin of the contract
-        owner: AccountId,
+        admin: AccountId,
         /// Who can make the requests
         authorized_users: HashMap<AccountId, ()>,
         /// Who can deliver the results
@@ -90,9 +90,9 @@ mod trusted_etl {
 
         /// Init
         #[ink(constructor)]
-        pub fn new(owner: AccountId, oracle: AccountId) -> Self {
+        pub fn new(admin: AccountId, oracle: AccountId) -> Self {
             Self {
-                owner: owner,
+                admin: admin,
                 authorized_users: HashMap::new(),
                 authorized_oracle: oracle,
                 requests: HashMap::new(),
@@ -101,14 +101,14 @@ mod trusted_etl {
             }
         }
 
-        /// In default case the owner is also the user and the oracle
+        /// In default case the admin is also the user and the oracle
         #[ink(constructor)]
         pub fn default() -> Self {
             let caller = Self::env().caller();
             let mut authorized_users: HashMap<AccountId,()> = HashMap::new();
             authorized_users.insert(caller, ());
             Self {
-                owner: caller,
+                admin: caller,
                 authorized_oracle: caller,
                 authorized_users,
                 requests: HashMap::new(),
@@ -208,7 +208,7 @@ mod trusted_etl {
         pub fn set_oracle(&mut self, new_oracle: AccountId) -> Result<(),Error>{
             let from = self.env().caller();
 
-            if from != self.owner {
+            if from != self.admin {
                 return Err(Error::Unauthorized);
             }
 
@@ -226,7 +226,7 @@ mod trusted_etl {
         pub fn set_fee(&mut self, new_fee: Balance) -> Result<(),Error>{
             let from = self.env().caller();
 
-            if from != self.owner {
+            if from != self.admin {
                 return Err(Error::Unauthorized);
             }
 
@@ -242,7 +242,7 @@ mod trusted_etl {
         pub fn add_user(&mut self, user: AccountId) -> Result<(),Error>{
             let from = self.env().caller();
 
-            if from != self.owner {
+            if from != self.admin {
                 return Err(Error::Unauthorized);
             }
 
@@ -258,7 +258,7 @@ mod trusted_etl {
         pub fn remove_user(&mut self, user: AccountId) -> Result<(),Error>{
             let from = self.env().caller();
 
-            if from != self.owner {
+            if from != self.admin {
                 return Err(Error::Unauthorized);
             }
 
@@ -273,7 +273,7 @@ mod trusted_etl {
         pub fn clear_expired(&mut self, request_id: u64) -> Result<(),Error> {
             let from = self.env().caller();
 
-            if from != self.authorized_oracle && from != self.owner {
+            if from != self.authorized_oracle && from != self.admin {
                 return Err(Error::Unauthorized);
             }
 
