@@ -13,6 +13,10 @@ mod trusted_etl {
         RequestExpired,
         RequestNotExpired,
         RequestNotFound,
+        TransferFailed,
+        InsufficientFunds,
+        BelowSubsistenceThreshold,
+        PaymentRequired,
     }
 
     #[ink(event)]
@@ -26,6 +30,39 @@ mod trusted_etl {
         valid_till: u64,
     }
 
+    #[ink(event)]
+    pub struct RequestInvalidated {
+        #[ink(topic)]
+        request_id: u64,
+        refunded: Balance,
+    }
+
+    #[ink(event)]
+    pub struct OracleSet {
+        #[ink(topic)]
+        oracle: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct UserAdded {
+        #[ink(topic)]
+        user: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct UserRemoved {
+        #[ink(topic)]
+        user: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct RewardsClaimed {
+        #[ink(topic)]
+        oracle: AccountId,
+        amount: Balance,
+    }
+
+
     #[ink(storage)]
     pub struct TrustedOracle {
         /// Admin of the contract
@@ -34,10 +71,12 @@ mod trusted_etl {
         authorized_users: HashMap<AccountId, ()>,
         /// Who can deliver the results
         authorized_oracle: AccountId,
-        /// Store <RequestId, ExpiryBlock>
-        requests: HashMap<u64, u64>,
+        /// Store <RequestId, (AccountId, ExpiryBlock, fee)>
+        requests: HashMap<u64, (AccountId, u64, Balance)>,
         /// Current request head
         request_idx: u64,
+        /// Current fee per request
+        fee: Balance,
     }
 
     impl TrustedOracle {
@@ -51,6 +90,7 @@ mod trusted_etl {
                 authorized_oracle: oracle,
                 requests: HashMap::new(),
                 request_idx: 0,
+                fee: (0 as u128).into(),
             }
         }
 
@@ -66,6 +106,7 @@ mod trusted_etl {
                 authorized_users,
                 requests: HashMap::new(),
                 request_idx: 0,
+                fee: (0 as u128).into(),
             }
         }
 
@@ -74,7 +115,7 @@ mod trusted_etl {
         //
 
         /// Make a PQL request
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn request(&mut self, ipfs_hash: Hash, valid_period: u32) -> Result<(),Error> {
             let from = self.env().caller();
 
@@ -82,7 +123,11 @@ mod trusted_etl {
                 return Err(Error::Unauthorized);
             }
 
-            // TODO: charge fee
+            if self.fee > (0 as u128).into() {
+                if self.env().transferred_balance() != self.fee {
+                    return Err(Error::PaymentRequired);
+                }
+            }
 
             // loop around to 0 after u64::max_value() is reached
             self.request_idx = self.request_idx.wrapping_add(1);
@@ -90,7 +135,7 @@ mod trusted_etl {
             let valid_till = self.env().block_number() + valid_period as u64;
             self.requests.insert(
                 self.request_idx,
-                valid_till,
+                (from, valid_till, self.fee),
             );
 
             self.env().emit_event(Request{from, ipfs_hash, valid_till});
@@ -111,11 +156,11 @@ mod trusted_etl {
             }
 
             // check if request_id has expired
-            if let Some(valid_till) = self.requests.get(&request_id) {
+            if let Some(request) = self.requests.get(&request_id) {
+                let (user_id, valid_till, fee) = request;
                 if *valid_till < self.env().block_number() {
+                    self.refund_(request_id, *user_id, *fee)?;
                     self.requests.take(&request_id);
-                    self.refund_(request_id);
-                    // TODO: event
                     return Err(Error::RequestExpired);
                 }
             } else {
@@ -136,7 +181,7 @@ mod trusted_etl {
 
         /// Distribute the rewards to the oracle.
         #[ink(message)]
-        pub fn withdraw(&mut self) -> Result<(),Error>{
+        pub fn claim_rewards(&mut self) -> Result<(),Error>{
             let from = self.env().caller();
 
             if from != self.authorized_oracle {
@@ -144,9 +189,7 @@ mod trusted_etl {
             }
 
             // send rewards to the current oracle
-            self.withdraw_();
-            // TODO: event
-            Ok(())
+            self.claim_()
         }
 
         //
@@ -163,10 +206,11 @@ mod trusted_etl {
             }
 
             // send rewards to the current oracle
-            self.withdraw_();
+            self.claim_()?;
 
             // set new oracle
             self.authorized_oracle = new_oracle;
+            self.env().emit_event(OracleSet{oracle: new_oracle});
             Ok(())
         }
 
@@ -181,7 +225,7 @@ mod trusted_etl {
 
             // add the user
             self.authorized_users.insert(user.clone(), ());
-            // TODO: emit event
+            self.env().emit_event(UserAdded{user});
             Ok(())
         }
 
@@ -197,7 +241,7 @@ mod trusted_etl {
 
             // remove the user
             self.authorized_users.take(&user);
-            // TODO: emit event
+            self.env().emit_event(UserRemoved{user});
             Ok(())
         }
 
@@ -210,11 +254,11 @@ mod trusted_etl {
                 return Err(Error::Unauthorized);
             }
 
-            if let Some(valid_till) = self.requests.get(&request_id) {
+            if let Some(request) = self.requests.get(&request_id) {
+                let (user_id, valid_till, fee) = request;
                 if *valid_till < self.env().block_number() {
+                    self.refund_(request_id, *user_id, *fee)?;
                     self.requests.take(&request_id);
-                    self.refund_(request_id);
-                    // TODO: event
                     return Ok(());
                 } else {
                     return Err(Error::RequestNotExpired);
@@ -229,21 +273,51 @@ mod trusted_etl {
         //
 
         // TODO: check if this is private & internal only
-        fn withdraw_(&mut self) {
+        fn claim_(&mut self) -> Result<(),Error> {
             let balance = self.env().balance();
             if balance > (0 as u128).into() {
                 let tx = self.env().transfer(self.authorized_oracle, balance);
-                // TODO: handle errors
-                match tx {
-                    Ok(_) => (),
-                    Err(_) => ()
+                return match tx {
+                    Ok(_) => {
+                        let event = RewardsClaimed{
+                            oracle: self.authorized_oracle,
+                            amount: balance
+                        };
+                        self.env().emit_event(event);
+                        Ok(())
+                    },
+                    Err(err) => {
+                        match err {
+                            ink_env::Error::BelowSubsistenceThreshold =>
+                                Err(Error::BelowSubsistenceThreshold),
+                            _ => Err(Error::TransferFailed),
+                        }
+                    }
                 }
             }
+            Ok(())
         }
 
         // TODO: check if this is private & internal only
-        fn refund_(&mut self, request_id: u64) {
-            // TODO
+        fn refund_(&mut self, request_id: u64, user_id: AccountId, fee: Balance) -> Result<(),Error> {
+            if fee > (0 as u128).into() {
+                if self.env().balance() < fee {
+                    return Err(Error::InsufficientFunds);
+                }
+                if let Err(err) = self.env().transfer(user_id, fee) {
+                    return match err {
+                        ink_env::Error::BelowSubsistenceThreshold =>
+                            Err(Error::BelowSubsistenceThreshold),
+                        _ => Err(Error::TransferFailed),
+                    }
+                }
+            }
+            let event = RequestInvalidated{
+                request_id,
+                refunded: fee
+            };
+            self.env().emit_event(event);
+            Ok(())
         }
 
     }
