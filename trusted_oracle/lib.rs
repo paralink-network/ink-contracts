@@ -62,6 +62,13 @@ mod trusted_etl {
         amount: Balance,
     }
 
+    #[ink(event)]
+    pub struct FeeChanged {
+        #[ink(topic)]
+        old_fee: Balance,
+        new_fee: Balance,
+    }
+
 
     #[ink(storage)]
     pub struct TrustedOracle {
@@ -213,6 +220,22 @@ mod trusted_etl {
             self.env().emit_event(OracleSet{oracle: new_oracle});
             Ok(())
         }
+
+        /// Change the per-request fee.
+        #[ink(message)]
+        pub fn set_fee(&mut self, new_fee: Balance) -> Result<(),Error>{
+            let from = self.env().caller();
+
+            if from != self.owner {
+                return Err(Error::Unauthorized);
+            }
+
+            let old_fee = self.fee.clone();
+            self.fee = new_fee;
+            self.env().emit_event(FeeChanged{old_fee, new_fee});
+            Ok(())
+        }
+
 
         /// Add user to the oracle contract
         #[ink(message)]
