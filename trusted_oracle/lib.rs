@@ -17,6 +17,7 @@ mod trusted_oracle {
         InsufficientFunds,
         BelowSubsistenceThreshold,
         PaymentRequired,
+        CallbackExecutionError,
     }
 
     #[ink(event)]
@@ -69,6 +70,13 @@ mod trusted_oracle {
         new_fee: Balance,
     }
 
+    #[ink(event)]
+    pub struct CallbackComplete {
+        #[ink(topic)]
+        request_id: u64,
+        to: AccountId,
+        result: [u8; 32]
+    }
 
     #[ink(storage)]
     pub struct TrustedOracle {
@@ -155,7 +163,10 @@ mod trusted_oracle {
 
         /// Deliver the oracle result
         #[ink(message)]
-        pub fn callback(&mut self, request_id: u64) -> Result<(),Error> {
+        pub fn callback(&mut self,
+            request_id: u64,
+            callback_addr: AccountId,
+            result: [u8; 32]) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.authorized_oracle {
@@ -174,14 +185,65 @@ mod trusted_oracle {
                 return Err(Error::RequestNotFound);
             }
 
-            // TODO: deliver result as callback
-            // https://paritytech.github.io/ink/ink_env/fn.invoke_contract.html
-            // ???
-            // https://paritytech.github.io/ink/ink_env/call/index.html
+            // deliver result as callback
+            // note: this will not work off-chain, see:
+            // https://paritytech.github.io/ink/src/ink_env/call/call_builder.rs.html#53
+
+            // // method 1:
+            // // https://paritytech.github.io/ink/ink_env/fn.invoke_contract.html
+            //
+            // use ink_env::call::{
+            //     utils::{ReturnType},
+            //     Selector, ExecutionInput, CallParams};
+            // let selector = Selector::new([
+            //     0xB1, 0x6B, 0x00, 0xB5,
+            // ]);
+            // let calldata: CallParams<ink_env::DefaultEnvironment, _, ()> = CallParams{
+            //     /// smart contract we are calling
+            //     callee: callback_addr,
+            //     /// Default gas limit
+            //     gas_limit: 1_000_000 as u64,
+            //     /// Not sending any funds
+            //     transferred_value: (0 as u128).into(),
+            //     /// Not expecting a return type
+            //     return_type: ReturnType::default(),
+            //     /// Function and its args??
+            //     exec_input: ExecutionInput::new(selector).push_arg(42)
+            // };
+            // if let Err(err) = ink_env::invoke_contract(&calldata) {
+            //     return Err(Error::CallbackExecutionError);
+            // }
+
+            // method 2:
+            // https://paritytech.github.io/ink/ink_env/call/fn.build_call.html
+            //
+            use ink_env::call::{build_call, Selector, ExecutionInput};
+            let selector = Selector::new([
+                0xB1, 0x6B, 0x00, 0xB5,
+            ]);
+            let callback = build_call::<ink_env::DefaultEnvironment>()
+                .callee(callback_addr)
+                .gas_limit(1_000_000)
+                .transferred_value(0)
+                .exec_input(ExecutionInput::new(selector).push_arg(&result))
+                .returns::<()>()
+                .fire();
+            if let Err(_) = callback {
+                return Err(Error::CallbackExecutionError);
+            }
+
+            // TODO
+            // There are a few issues with this implementation
+            // 1. The callback might not be the same as in PQL.
+            // Should the user define the callback in a request instead?
+            // 2. Can we do better than responding with raw bytes?
+            // Perhaps we could do some decoding here?
+            // 3. Should we expect an Ok(()) response from the callee?
 
             // remove request from storage
             self.requests.take(&request_id);
-            // TODO: emit event
+            let event = CallbackComplete{request_id, to: callback_addr, result};
+            self.env().emit_event(event);
             Ok(())
         }
 
