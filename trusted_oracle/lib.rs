@@ -3,7 +3,7 @@
 use ink_lang as ink;
 
 #[ink::contract]
-mod trusted_etl {
+mod trusted_oracle {
     use ink_storage::collections::{HashMap};
 
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -122,7 +122,7 @@ mod trusted_etl {
         //
 
         /// Make a PQL request
-        #[ink(message, payable)]
+        #[ink(message, payable, selector = "0xB16B00B5")]
         pub fn request(&mut self, ipfs_hash: Hash, valid_period: u32) -> Result<(),Error> {
             let from = self.env().caller();
 
@@ -353,14 +353,112 @@ mod trusted_etl {
         extern crate hex;
         use hex::FromHex;
 
+
         #[ink::test]
-        fn it_works() {
-            let mut request_etl = TrustedOracle::default();
+        fn test_defaults() {
+            // alice is admin
+            let accounts = default_accounts();
+            set_sender(accounts.alice);
+
+            // default contract
+            let contract = TrustedOracle::default();
+            assert!(contract.admin == accounts.alice);
+            assert!(contract.authorized_oracle == accounts.alice);
+            assert!(contract.authorized_users.contains_key(&accounts.alice));
+        }
+
+        #[ink::test]
+        fn test_make_free_request() {
+            let mut contract = TrustedOracle::default();
+            let ipfs_hash = sample_ipfs_hash();
+            contract.request(ipfs_hash, 10);
+        }
+
+
+        #[ink::test]
+        fn test_make_paid_request() {
+            // alice is admin
+            let accounts = default_accounts();
+            set_sender(accounts.alice);
+
+            // admin sets the fee
+            let mut contract = TrustedOracle::default();
+            let fee: Balance = (100 as u128).into();
+            assert!(contract.set_fee(fee).is_ok());
+            assert!(contract.fee == fee);
+
+            let ipfs_hash = sample_ipfs_hash();
+
+            // payment required
+            assert_eq!(contract.request(ipfs_hash, 10), Err(Error::PaymentRequired));
+
+            // kinda hacky way of sending value into contract
+            // assert!(contract.request(ipfs_hash, 10, {value: 10}).is_ok());
+            set_sender(accounts.alice);
+            set_balance(accounts.alice, fee);
+            let mut data = ink_env::test::CallData::new(ink_env::call::Selector::new([
+                0xB1, 0x6B, 0x00, 0xB5,
+            ]));
+            data.push_arg(&accounts.alice);
+
+            // Send "fee" value into the contract
+            ink_env::test::push_execution_context::<ink_env::DefaultEnvironment>(
+                accounts.alice,
+                contract_id(),
+                DEFAULT_GAS_LIMIT,
+                fee,
+                data,
+            );
+            assert!(contract.request(ipfs_hash, 10).is_ok());
+        }
+
+
+        //
+        // helper functions
+        //
+        const DEFAULT_ENDOWMENT: Balance = 1_000_000;
+        const DEFAULT_GAS_LIMIT: Balance = 1_000_000;
+        fn default_accounts(
+        ) -> ink_env::test::DefaultAccounts<ink_env::DefaultEnvironment> {
+            ink_env::test::default_accounts::<ink_env::DefaultEnvironment>()
+                .expect("off-chain environment should have been initialized already")
+        }
+
+        fn set_sender(caller: AccountId) {
+            ink_env::test::push_execution_context::<ink_env::DefaultEnvironment>(
+                caller,
+                contract_id(),
+                DEFAULT_GAS_LIMIT,
+                DEFAULT_ENDOWMENT,
+                ink_env::test::CallData::new(ink_env::call::Selector::new([0x00; 4])),
+            )
+        }
+
+        fn set_balance(account_id: AccountId, balance: Balance) {
+            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(
+                account_id, balance,
+            )
+                .expect("Cannot set account balance");
+        }
+
+        fn get_balance(account_id: AccountId) -> Balance {
+            ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(account_id)
+                .expect("Cannot set account balance")
+        }
+
+        fn contract_id() -> AccountId {
+            ink_env::test::get_current_contract_account_id::<ink_env::DefaultEnvironment>(
+            )
+                .expect("Cannot get contract id")
+         }
+
+        fn sample_ipfs_hash() -> Hash {
             // first 2 bytes omitted
             let input = "42978b1c54ad19f93da7dbc05d0f023062256e95360dfba06c09c1605da75a1b";
             let decoded = <[u8; 32]>::from_hex(input).expect("Decoding failed");
-            let ipfs_hash = Hash::from(decoded);
-            request_etl.request(ipfs_hash, 10);
+            Hash::from(decoded)
         }
+
     }
+
 }
