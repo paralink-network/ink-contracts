@@ -17,7 +17,7 @@ mod trusted_oracle {
         InsufficientFunds,
         BelowSubsistenceThreshold,
         PaymentRequired,
-        CallbackExecutionError,
+        CallbackExecutionFailed,
     }
 
     #[ink(event)]
@@ -211,7 +211,7 @@ mod trusted_oracle {
             //     exec_input: ExecutionInput::new(selector).push_arg(42)
             // };
             // if let Err(err) = ink_env::invoke_contract(&calldata) {
-            //     return Err(Error::CallbackExecutionError);
+            //     return Err(Error::CallbackExecutionFailed);
             // }
 
             // method 2:
@@ -229,7 +229,7 @@ mod trusted_oracle {
                 .returns::<()>()
                 .fire();
             if let Err(_) = callback {
-                return Err(Error::CallbackExecutionError);
+                return Err(Error::CallbackExecutionFailed);
             }
 
             // TODO
@@ -461,7 +461,8 @@ mod trusted_oracle {
             let mut data = ink_env::test::CallData::new(ink_env::call::Selector::new([
                 0xB1, 0x6B, 0x00, 0xB5,
             ]));
-            data.push_arg(&accounts.alice);
+            data.push_arg(&ipfs_hash);
+            data.push_arg(&10);
 
             // Send "fee" value into the contract
             ink_env::test::push_execution_context::<ink_env::DefaultEnvironment>(
@@ -472,6 +473,54 @@ mod trusted_oracle {
                 data,
             );
             assert!(contract.request(ipfs_hash, 10).is_ok());
+        }
+
+        #[ink::test]
+        fn test_refunds() {
+            // alice is admin
+            let accounts = default_accounts();
+            set_sender(accounts.alice);
+
+            // admin sets the fee
+            let mut contract = TrustedOracle::default();
+            let fee: Balance = (100 as u128).into();
+            assert!(contract.set_fee(fee).is_ok());
+            assert!(contract.fee == fee);
+
+            // request is made and paid for
+            let ipfs_hash = sample_ipfs_hash();
+            set_sender(accounts.alice);
+            set_balance(accounts.alice, fee);
+            assert_eq!(get_balance(accounts.alice), fee);
+            let mut data = ink_env::test::CallData::new(ink_env::call::Selector::new([
+                0xB1, 0x6B, 0x00, 0xB5,
+            ]));
+            data.push_arg(&ipfs_hash);
+            data.push_arg(&10);
+
+            // Send "fee" value into the contract
+            ink_env::test::push_execution_context::<ink_env::DefaultEnvironment>(
+                accounts.alice,
+                contract_id(),
+                DEFAULT_GAS_LIMIT,
+                fee,
+                data,
+            );
+            assert_eq!(get_balance(accounts.alice), fee);
+            assert_eq!(get_balance(contract_id()), 0);
+            assert!(contract.request(ipfs_hash, 10).is_ok());
+            assert_eq!(get_balance(contract_id()), fee);
+            assert_eq!(get_balance(accounts.alice), 0);
+
+            // request expires due to non-response
+            for _ in 0..10 {
+                ink_env::test::advance_block::<ink_env::DefaultEnvironment>().unwrap();
+            }
+
+            // request is refunded
+            assert!(contract.clear_expired(1).is_ok());
+            assert_eq!(get_balance(contract_id()), 0);
+            assert_eq!(get_balance(accounts.alice), fee);
         }
 
 
