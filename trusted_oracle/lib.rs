@@ -18,6 +18,7 @@ mod trusted_oracle {
         BelowSubsistenceThreshold,
         PaymentRequired,
         CallbackExecutionFailed,
+        ValueError,
     }
 
     #[ink(event)]
@@ -92,13 +93,21 @@ mod trusted_oracle {
         request_idx: u64,
         /// Current fee per request
         fee: Balance,
+        /// Minimum number of blocks for request validity
+        min_valid_period: u32,
+        /// Maximum period for request timeout
+        max_valid_period: u32,
     }
 
     impl TrustedOracle {
 
         /// Init
         #[ink(constructor)]
-        pub fn new(admin: AccountId, oracle: AccountId) -> Self {
+        pub fn new(
+            admin: AccountId,
+            oracle: AccountId,
+            min_valid_period: u32,
+            max_valid_period: u32) -> Self {
             Self {
                 admin: admin,
                 authorized_users: HashMap::new(),
@@ -106,6 +115,8 @@ mod trusted_oracle {
                 requests: HashMap::new(),
                 request_idx: 0,
                 fee: (0 as u128).into(),
+                min_valid_period,
+                max_valid_period,
             }
         }
 
@@ -122,6 +133,8 @@ mod trusted_oracle {
                 requests: HashMap::new(),
                 request_idx: 0,
                 fee: (0 as u128).into(),
+                min_valid_period: 10,
+                max_valid_period: 100,
             }
         }
 
@@ -146,7 +159,12 @@ mod trusted_oracle {
 
             // loop around to 0 after u64::max_value() is reached
             self.request_idx = self.request_idx.wrapping_add(1);
-            // infallible add
+
+            // require some reasonable valid_period
+            if valid_period < self.min_valid_period ||
+               valid_period > self.max_valid_period {
+                return Err(Error::ValueError);
+            }
             let valid_till = self.env().block_number() + valid_period as u64;
             self.requests.insert(
                 self.request_idx,
