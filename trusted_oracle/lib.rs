@@ -351,12 +351,6 @@ mod trusted_oracle {
         /// Remove expired request to free contract storage
         #[ink(message)]
         pub fn clear_expired(&mut self, request_id: u64) -> Result<(),Error> {
-            let from = self.env().caller();
-
-            if from != self.authorized_oracle && from != self.admin {
-                return Err(Error::Unauthorized);
-            }
-
             if let Some(request) = self.requests.get(&request_id) {
                 let (user_id, valid_till, fee) = request;
                 if *valid_till < self.env().block_number() {
