@@ -292,7 +292,7 @@ mod trusted_oracle {
 
         /// Distribute the rewards to the oracle.
         #[ink(message)]
-        pub fn set_oracle(&mut self, new_oracle: AccountId) -> Result<(),Error>{
+        pub fn set_oracle(&mut self, new_oracle: AccountId) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.admin {
@@ -310,7 +310,7 @@ mod trusted_oracle {
 
         /// Change the per-request fee.
         #[ink(message)]
-        pub fn set_fee(&mut self, new_fee: Balance) -> Result<(),Error>{
+        pub fn set_fee(&mut self, new_fee: Balance) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.admin {
@@ -326,7 +326,7 @@ mod trusted_oracle {
 
         /// Add user to the oracle contract
         #[ink(message)]
-        pub fn add_user(&mut self, user: AccountId) -> Result<(),Error>{
+        pub fn add_user(&mut self, user: AccountId) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.admin {
@@ -342,7 +342,7 @@ mod trusted_oracle {
 
         /// Remove user from the oracle contract
         #[ink(message)]
-        pub fn remove_user(&mut self, user: AccountId) -> Result<(),Error>{
+        pub fn remove_user(&mut self, user: AccountId) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.admin {
