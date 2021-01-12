@@ -21,6 +21,13 @@ mod trusted_oracle {
         ValueError,
     }
 
+    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(::scale_info::TypeInfo))]
+    pub enum OracleResult {
+        Numeric(i64),
+        RawBytes([u8; 32]),
+    }
+
     #[ink(event)]
     pub struct Request {
         #[ink(topic)]
@@ -76,7 +83,7 @@ mod trusted_oracle {
         #[ink(topic)]
         request_id: u64,
         to: AccountId,
-        result: [u8; 32]
+        result: OracleResult
     }
 
     #[ink(storage)]
@@ -184,7 +191,7 @@ mod trusted_oracle {
         pub fn callback(&mut self,
             request_id: u64,
             callback_addr: AccountId,
-            result: [u8; 32]) -> Result<(),Error> {
+            result: OracleResult) -> Result<(),Error> {
             let from = self.env().caller();
 
             if from != self.authorized_oracle {
