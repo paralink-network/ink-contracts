@@ -34,7 +34,7 @@ mod trusted_oracle {
         from: AccountId,
         /// PQL ETL Definition
         /// Skip first 2 bytes (hash fn, size) so that we can fit into bytes32
-        ipfs_hash: Hash,
+        pql_hash: Hash,
         /// Block number for request expiry
         valid_till: u64,
     }
@@ -151,7 +151,7 @@ mod trusted_oracle {
 
         /// Make a PQL request
         #[ink(message, payable, selector = "0xB16B00B5")]
-        pub fn request(&mut self, ipfs_hash: Hash, valid_period: u32) -> Result<(),Error> {
+        pub fn request(&mut self, pql_hash: Hash, valid_period: u32) -> Result<u64, Error> {
             let from = self.env().caller();
 
             if !self.authorized_users.contains_key(&from) {
@@ -178,8 +178,8 @@ mod trusted_oracle {
                 (from, valid_till, self.fee),
             );
 
-            self.env().emit_event(Request{from, ipfs_hash, valid_till});
-            Ok(())
+            self.env().emit_event(Request{from, pql_hash, valid_till});
+            Ok(self.request_idx)
         }
 
         //
@@ -451,8 +451,8 @@ mod trusted_oracle {
         #[ink::test]
         fn test_make_free_request() {
             let mut contract = TrustedOracle::default();
-            let ipfs_hash = sample_ipfs_hash();
-            contract.request(ipfs_hash, 10);
+            let pql_hash = sample_ipfs_hash();
+            contract.request(pql_hash, 10);
         }
 
 
@@ -468,19 +468,19 @@ mod trusted_oracle {
             assert!(contract.set_fee(fee).is_ok());
             assert!(contract.fee == fee);
 
-            let ipfs_hash = sample_ipfs_hash();
+            let pql_hash = sample_ipfs_hash();
 
             // payment required
-            assert_eq!(contract.request(ipfs_hash, 10), Err(Error::PaymentRequired));
+            assert_eq!(contract.request(pql_hash, 10), Err(Error::PaymentRequired));
 
             // kinda hacky way of sending value into contract
-            // assert!(contract.request(ipfs_hash, 10, {value: 10}).is_ok());
+            // assert!(contract.request(pql_hash, 10, {value: 10}).is_ok());
             set_sender(accounts.alice);
             set_balance(accounts.alice, fee);
             let mut data = ink_env::test::CallData::new(ink_env::call::Selector::new([
                 0xB1, 0x6B, 0x00, 0xB5,
             ]));
-            data.push_arg(&ipfs_hash);
+            data.push_arg(&pql_hash);
             data.push_arg(&10);
 
             // Send "fee" value into the contract
@@ -491,7 +491,7 @@ mod trusted_oracle {
                 fee,
                 data,
             );
-            assert!(contract.request(ipfs_hash, 10).is_ok());
+            assert!(contract.request(pql_hash, 10).is_ok());
         }
 
         #[ink::test]
@@ -507,7 +507,7 @@ mod trusted_oracle {
             assert!(contract.fee == fee);
 
             // request is made and paid for
-            let ipfs_hash = sample_ipfs_hash();
+            let pql_hash = sample_ipfs_hash();
             set_sender(accounts.alice);
             set_balance(accounts.alice, fee);
             // TODO: testing if transfer occured is not yet possible
@@ -517,7 +517,7 @@ mod trusted_oracle {
             let mut data = ink_env::test::CallData::new(ink_env::call::Selector::new([
                 0xB1, 0x6B, 0x00, 0xB5,
             ]));
-            data.push_arg(&ipfs_hash);
+            data.push_arg(&pql_hash);
             data.push_arg(&10);
 
             // Send "fee" value into the contract
@@ -530,7 +530,7 @@ mod trusted_oracle {
             );
             // assert_eq!(get_balance(accounts.alice), fee);
             // assert_eq!(get_balance(contract_id()), 0);
-            assert!(contract.request(ipfs_hash, 10).is_ok());
+            assert!(contract.request(pql_hash, 10).is_ok());
             // assert_eq!(get_balance(contract_id()), fee);
             // assert_eq!(get_balance(accounts.alice), 0);
 
