@@ -1,8 +1,5 @@
 ## (Trusted) Oracle Consumer
-This is a sample contract that makes requests to the (Trusted) Oracle and receives callbacks with
-the oracle job results.
-
-It can be used as a template for Trusted Oracle integration into your smart contract.
+This sample contract shows the minimal callback integration for TrustedOracle.
 
 ### Test
 ```
