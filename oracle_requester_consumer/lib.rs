@@ -57,7 +57,7 @@ mod oracle_requester_consumer {
         /// In principle your smart contract does not need to be an originator of a request.
         /// If you need only to recieve results into your smart contract, check `OracleConsumer`.
         #[ink(message, payable)]
-        pub fn request_oracle_update(&mut self, pql: Hash, valid_period: u32) -> Result<(),Error> {
+        pub fn init_request(&mut self, pql: Hash, valid_period: u32) -> Result<(),Error> {
             // only admin can request an oracle job
             // to avoid this requirement, you can:
             //  - pre-fund the contract with sufficent balance to pay for fees
