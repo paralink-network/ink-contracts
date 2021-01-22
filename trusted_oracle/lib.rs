@@ -37,6 +37,7 @@ mod trusted_oracle {
         pql_hash: Hash,
         /// Block number for request expiry
         valid_till: u64,
+        request_id: u64,
     }
 
     #[ink(event)]
@@ -167,18 +168,26 @@ mod trusted_oracle {
             // loop around to 0 after u64::max_value() is reached
             self.request_idx = self.request_idx.wrapping_add(1);
 
-            // require some reasonable valid_period
-            if valid_period < self.min_valid_period ||
-               valid_period > self.max_valid_period {
-                return Err(Error::ValueError);
-            }
-            let valid_till = self.env().block_number() + valid_period as u64;
-            self.requests.insert(
-                self.request_idx,
-                (from, valid_till, self.fee),
-            );
+            // TODO: until block_number() is fixed, we use `valid_period`
+            // as the last valid block_id,
+            // therefore the last block should be computed off-chain
 
-            self.env().emit_event(Request{from, pql_hash, valid_till});
+            //// require some reasonable valid_period
+            //if valid_period < self.min_valid_period || valid_period > self.max_valid_period {
+            //return Err(Error::ValueError);
+            //}
+            //let valid_till = self.env().block_number() + valid_period as u64;
+            //self.requests
+            //.insert(self.request_idx, (from, valid_till, self.fee));
+
+            self.requests
+                .insert(self.request_idx, (from, valid_period as u64, self.fee));
+            self.env().emit_event(Request {
+                from,
+                pql_hash,
+                valid_till: valid_period as u64,
+                request_id: self.request_idx,
+            });
             Ok(self.request_idx)
         }
 
